@@ -4,21 +4,18 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Rectangle
+import platform
 import io
 
-# 폰트 설정 (웹 서버 환경 호환용)
-plt.rcParams['font.family'] = 'Malgun Gothic'
+# 플랫폼 확인 후 리눅스 클라우드 서버는 나눔고딕, 로컬은 맑은고딕 할당
+if platform.system() == 'Linux':
+    plt.rcParams['font.family'] = 'NanumGothic'
+else:
+    plt.rcParams['font.family'] = 'Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] = False
-try:
-    # 리눅스 클라우드 서버용 한글 폰트 우회
-    import matplotlib.font_manager as fm
-    plt.rcParams['font.family'] = 'sans-serif'
-except:
-    pass
 
 st.set_page_config(page_title="주식 손익 추적기", layout="wide", initial_sidebar_state="expanded")
 
-# --- 데이터 관리 로직 (세션 스테이트 활용) ---
 if 'df' not in st.session_state:
     try:
         st.session_state.df = pd.read_csv("stock_log.csv")
@@ -31,7 +28,6 @@ def save_data(df):
 
 df = st.session_state.df
 
-# --- 사이드바: 입력 및 데이터 관리 ---
 with st.sidebar:
     st.header("📊 데이터 입력")
     
@@ -76,7 +72,6 @@ with st.sidebar:
     st.header("💾 클라우드 데이터 관리")
     st.caption("서버 절전 모드 전환 시 데이터가 초기화될 수 있습니다. 주기적으로 백업하십시오.")
     
-    # 1. 백업 (다운로드)
     if not df.empty:
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button(
@@ -87,7 +82,6 @@ with st.sidebar:
             use_container_width=True
         )
     
-    # 2. 복구 (업로드)
     uploaded_file = st.file_uploader("백업 파일 복구 (업로드)", type=["csv"])
     if uploaded_file is not None:
         if st.button("업로드한 파일로 데이터 덮어쓰기", use_container_width=True):
@@ -96,7 +90,6 @@ with st.sidebar:
             st.success("데이터가 성공적으로 복구되었습니다.")
             st.rerun()
 
-# --- 메인 대시보드 렌더링 ---
 st.title("📈 주식 손익 추적기 (Cloud Ver.)")
 
 if df.empty:
@@ -146,29 +139,27 @@ else:
     hwm_val = float(df.iloc[0]['현자산금액'])
     hwm_count = sum(1 for val in df['현자산금액'].astype(float) if val > (hwm_val := max(hwm_val, val)) or val == hwm_val and val > float(df.iloc[0]['현자산금액']))
 
-    # 1. 핵심 지표 영역
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("현재 총 이익률", f"{latest['이익률(%)']:.2f}%", f"{net_profit:,} 원")
-    col2.metric("전일 대비 증감", f"{dod_rate:.2f}%", f"{dod_amount:,} 원")
+    # 컬럼 비율 조정(1:1:1:1.3) 및 수치 축약(만 원) 적용
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1.3])
+    col1.metric("현재 총 이익률", f"{latest['이익률(%)']:.2f}%", f"{net_profit // 10000:,}만 원")
+    col2.metric("전일 대비 증감", f"{dod_rate:.2f}%", f"{dod_amount // 10000:,}만 원")
     col3.metric("목표 달성률", f"{latest['달성률(%)']:.2f}%")
     if days_rem > 0:
-        col4.metric("'27.03.25 예상 (추세선)", f"{int(max(0, expected_asset)):,} 원", f"필요: +{req_rate:.2f}%", delta_color="inverse")
+        col4.metric("'27.03.25 예상 (추세선)", f"{int(max(0, expected_asset)) // 10000:,}만 원", f"필요: +{req_rate:.2f}%", delta_color="inverse")
     else:
         col4.metric("'27.03.25 예상", "기한 도달")
 
     st.markdown("---")
 
-    # 2. 서브 지표 영역
-    sc1, sc2, sc3, sc4, sc5 = st.columns(5)
+    sc1, sc2, sc3, sc4, sc5 = st.columns([1, 1, 1, 1.2, 1])
     sc1.metric("시간 진행률", f"{time_elapsed_pct:.1f}%")
-    sc2.metric("연환산 기대수익률 (CAGR)", f"{cagr:.2f}%")
-    sc3.metric("월간 요구 수익률", f"{monthly_req_rate:.2f}% / 월")
-    sc4.metric(f"다음 마일스톤 ({next_milestone//10000}만)", f"잔여 {rem_to_milestone:,} 원")
+    sc2.metric("연환산 기대수익률(CAGR)", f"{cagr:.2f}%")
+    sc3.metric("월간 요구 수익률", f"{monthly_req_rate:.2f}%")
+    sc4.metric(f"다음 마일스톤 ({next_milestone//10000}만)", f"잔여 {rem_to_milestone // 10000:,}만 원")
     sc5.metric("최고점 경신 횟수", f"{hwm_count} 회")
 
     st.markdown("---")
 
-    # 3. 차트 렌더링
     fig, ax = plt.subplots(figsize=(10, 4))
     x_data = df['날짜']
     y_data = df['현자산금액'].astype(float)
@@ -205,7 +196,6 @@ else:
     
     st.pyplot(fig)
 
-    # 4. 하단 데이터 표 렌더링
     col_t1, col_t2 = st.columns([7, 3])
     
     with col_t1:
@@ -237,8 +227,8 @@ else:
             
             sched_data.append({
                 "기한": f"{dt_obj.strftime('%y')}.{dt_obj.month}",
-                "목표 자산액": f"{int(rounded_target):,}",
-                "잔여 필요액": f"{int(req_amt):,}" if req_amt > 0 else "목표 초과"
+                "목표 자산액": f"{int(rounded_target // 10000):,}만",
+                "잔여 필요액": f"{int(req_amt // 10000):,}만" if req_amt > 0 else "목표 초과"
             })
             
         st.dataframe(pd.DataFrame(sched_data), use_container_width=True, hide_index=True)
